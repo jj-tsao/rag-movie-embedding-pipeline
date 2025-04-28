@@ -17,6 +17,25 @@ class TMDBClient:
         )
         self.semaphore = asyncio.Semaphore(max_connections)
 
+
+    def build_discover_url(self, media_type: str, page: int, rating: float, vote_count: int) -> str:
+        today = date.today()
+        date_param = "primary_release_date.lte" if media_type == "movie" else "first_air_date.lte"
+        url = (
+            f"{self.BASE_URL}/discover/{media_type}"
+            f"?api_key={self.api_key}&language=en-US&page={page}&region=US"
+            f"&{date_param}={today}&vote_average.gte={rating}&vote_count.gte={vote_count}&sort_by=popularity.desc"
+        )
+        if media_type == "tv":
+            url += (
+                "&include_null_first_air_dates=false"
+                "&watch_region=US"
+                "&with_watch_monetization_types=flatrate|free|ads|rent|buy"
+                "&without_genres=10767,10763"
+            )
+        return url
+
+
     async def get(self, url: str):
         async with self.semaphore:
             try:
@@ -31,86 +50,102 @@ class TMDBClient:
                 print(f"[Unexpected Error] {e}")
         return None
 
-    async def fetch_movie_ids(
+
+    async def get_with_retry(self, url: str, retries: int = 2, delay: float = 1.0):
+        for attempt in range(retries + 1):
+            result = await self.get(url)
+            if result:
+                return result
+            if attempt < retries:
+                await asyncio.sleep(delay * (2 ** attempt))  # Exponential backoff
+        return None
+
+
+    async def fetch_media_ids(
         self,
+        media_type: str,  # "movie" or "tv"
         page: int = 1,
-        genre: Optional[str] = None,
         rating: float = 0,
         vote_count: int = 0
     ) -> List[int]:
-        today = date.today()
-        url = (
-            f"{self.BASE_URL}/discover/movie"
-            f"?api_key={self.api_key}&language=en-US&page={page}&region=US"
-            f"&primary_release_date.lte={today}&vote_average.gte={rating}&vote_count.gte={vote_count}&sort_by=popularity.desc"
-        )
-        if genre:
-            url += f"&with_genres={genre}"
-
-        data = await self.get(url)
+        url = self.build_discover_url(media_type, page, rating, vote_count)
+        data = await self.get_with_retry(url)
         return [movie["id"] for movie in data.get("results", [])] if data else []
 
-    async def fetch_movie_ids_bulk(
+
+    async def fetch_media_ids_bulk(
         self,
-        movies_count_in_k= 1,
-        genre: Optional[str] = None,
+        media_type: str,  # "movie" or "tv"
+        media_count_in_k: int = 1,
         rating: float = 0,
         vote_count: int = 0
     ) -> List[int]:
-        total_pages = int(movies_count_in_k * 50)
-        print(f"📥 Fetching movie IDs from {total_pages} pages with rating > {rating}...")
+        total_pages = int(media_count_in_k * 50)
+        print(f"📦 Fetching {media_type.upper()} IDs from {total_pages} pages with rating > {rating}...")
         tasks = [
-            self.fetch_movie_ids(page, genre, rating, vote_count)
+            self.fetch_media_ids(media_type, page, rating, vote_count)
             for page in range(1, total_pages + 1)
         ]
         results = await asyncio.gather(*tasks)
-        all_ids = [movie_id for sublist in results if isinstance(sublist, list) for movie_id in sublist]
-        print(f"✅ Fetched {len(all_ids):,} movie IDs")
+        all_ids = [mid for sublist in results if isinstance(sublist, list) for mid in sublist]
+        print(f"✅ Fetched {len(all_ids):,} {media_type.upper()} IDs")
         return all_ids
 
-    async def fetch_movie_details(self, movie_id: int) -> Optional[dict]:
-        base = f"{self.BASE_URL}/movie/{movie_id}"
+
+    async def fetch_media_details(self, media_type: str, media_id: int) -> Optional[dict]:
+        base = f"{self.BASE_URL}/{media_type}/{media_id}"
         details_url = f"{base}?api_key={self.api_key}"
-        credits_url = f"{base}/credits?api_key={self.api_key}"
+        credits_url = f"{base}/credits?api_key={self.api_key}" if media_type == "movie" else f"{base}/aggregate_credits?api_key={self.api_key}"
         keywords_url = f"{base}/keywords?api_key={self.api_key}"
         providers_url = f"{base}/watch/providers?api_key={self.api_key}"
 
-        movie_details = await self.get(details_url) or {}
-        credits_data = await self.get(credits_url)
-        keywords_data = await self.get(keywords_url)
-        providers_data = await self.get(providers_url)
+        media_details = await self.get_with_retry(details_url) or {}
+        credits_data = await self.get_with_retry(credits_url)
+        keywords_data = await self.get_with_retry(keywords_url)
+        providers_data = await self.get_with_retry(providers_url)
 
-        if credits_data:
-            crew = credits_data.get("crew", [])
-            cast = credits_data.get("cast", [])
-            movie_details["director"] = next((c["name"] for c in crew if c["job"] == "Director"), "Unknown")
-            movie_details["stars"] = [c["name"] for c in cast[:3]] if cast else []
+        if media_type == "movie":
+            if credits_data:
+                crew = credits_data.get("crew", [])
+                media_details["director"] = next((c["name"] for c in crew if c["job"] == "Director"), "Unknown")     
+                cast = credits_data.get("cast", [])
+                media_details["stars"] = [c.get("name") for c in cast[:3] if "name" in c]
+            else:       
+                media_details["director"] = "Unknown"
+                media_details["stars"] = []
         else:
-            movie_details["director"] = "Unknown"
-            movie_details["stars"] = []
+            media_details["creator"] = [c.get("name") for c in media_details.get("created_by", []) if "name" in c]
+            if credits_data:
+                cast = credits_data.get("cast", [])
+                media_details["stars"] = [c.get("name") for c in cast[:3] if "name" in c]
+            else:
+                media_details["stars"] = []
 
         if keywords_data:
-            movie_details["keywords"] = [kw["name"] for kw in keywords_data.get("keywords", [])]
+            keyword_key = "keywords" if media_type == "movie" else "results"
+            media_details["keywords"] = [kw["name"] for kw in keywords_data.get(keyword_key, [])]
 
         if providers_data:
             us_data = providers_data.get("results", {}).get("US", {})
             flatrate = us_data.get("flatrate", [])
             if flatrate:
-                movie_details["providers"] = [p["provider_name"] for p in flatrate]
+                media_details["providers"] = [p["provider_name"] for p in flatrate]
 
-        return movie_details
+        return media_details
 
-    async def fetch_all_movie_details(self, movie_ids: List[int]) -> List[dict]:
-        tasks = [self.fetch_movie_details(mid) for mid in movie_ids]
-        movies = []
-        for future in tqdm(asyncio.as_completed(tasks), total=len(tasks), desc="🎥 Fetching movie details"):
+
+    async def fetch_all_media_details(self, media_type: str, media_ids: List[int]) -> List[dict]:
+        tasks = [self.fetch_media_details(media_type, mid) for mid in media_ids]
+        media_details = []
+        for future in tqdm(asyncio.as_completed(tasks), total=len(tasks), desc=f"🎥 Fetching {media_type.upper()} details"):
             try:
-                movie = await future
-                if movie:
-                    movies.append(movie)
+                media = await future
+                if media:
+                    media_details.append(media)
             except Exception as e:
-                print(f"❌ Error fetching movie details: {e}")
-        return movies
+                print(f"❌ Error fetching {media_type.upper()} details: {e}")
+        return media_details
+
 
     async def aclose(self):
         await self.client.aclose()
