@@ -1,7 +1,11 @@
 import asyncio
 from typing import Dict, Tuple, List
 from datetime import datetime
-from openai import OpenAI
+from sentence_transformers import SentenceTransformer
+from config import EMBEDDING_MODEL_NAME
+
+sentence_model = SentenceTransformer(EMBEDDING_MODEL_NAME)  # Fine-tuned sentence transfomer model for movie data embedding 
+print("✅ Embedding Model loaded.")
 
 
 def format_media_text(media_type: str, media: Dict) -> Tuple[str, Dict]:
@@ -34,8 +38,8 @@ def format_media_text(media_type: str, media: Dict) -> Tuple[str, Dict]:
         director = media.get("director", "Unknown")
         collection = media.get("belongs_to_collection", {}).get("name", "") if media.get("belongs_to_collection") else ""
         specific_fields = {
-            "director": director,
             "collection": collection,
+            "director": director,
         }
         specific_content = f"Director: {director}"
     else:  # TV show
@@ -43,24 +47,27 @@ def format_media_text(media_type: str, media: Dict) -> Tuple[str, Dict]:
         creator_text = ", ".join(creator) if isinstance(creator, list) else creator
         season_count = media.get('number_of_seasons', None)
         specific_fields = {
-            "creator": creator,
             "season_count": season_count,
+            "creator": creator,
         }
         specific_content = f"Number of Seasons: {season_count}\nCreator: {creator_text}"
 
     # Build content string with conditional parts
-    content = f"""
-    Title: {title}
-    Genres: {", ".join(genre_list)}
-    Overview: {overview}
-    Tagline: {tagline}
-    {specific_content}
-    Stars: {", ".join(star_list)}
-    Release Date: {release_date[:10]}
-    Keywords: {", ".join(keyword_list)}
-    Poster URL: {poster_url}
-    """.strip()
+    parts = [
+        f"Title: {title}",
+        f"Genres: {', '.join(genre_list)}",
+        f"Overview: {overview}",
+        f"Tagline: {tagline}",
+        *(specific_content or []),
+        f"Stars: {', '.join(star_list)}",
+        f"Release Date: {release_date[:10]}",
+        f"Keywords: {', '.join(keyword_list)}",
+        f"Poster URL: {poster_url}"
+    ]
     
+    parts = [p for p in parts if p]
+    content = '\n'.join(parts)
+
     # Build metadata dictionary
     metadata = {
         "media_id": media_id,
@@ -86,13 +93,11 @@ def format_media_text(media_type: str, media: Dict) -> Tuple[str, Dict]:
     return content, metadata
 
 
-async def embed_text(client: OpenAI, text: str) -> list:
-    return await asyncio.to_thread(
-        lambda: client.embeddings.create(input=text, model="text-embedding-3-small").data[0].embedding
-    )
+async def embed_text(text: str) -> list:
+    return await asyncio.to_thread(lambda: sentence_model.encode(text).tolist())
 
 
-async def embed_and_format(media_type: str, media_details: List[dict], openai_client: OpenAI) -> List[dict]:
+async def embed_and_format(media_type: str, media_details: List[dict]) -> List[dict]:
     formatted_media = []
     embed_tasks = []
     formatted_pairs = []
@@ -102,7 +107,7 @@ async def embed_and_format(media_type: str, media_details: List[dict], openai_cl
     for media in media_details:
         content, metadata = format_media_text(media_type, media)
         formatted_pairs.append((content, metadata))
-        embed_tasks.append(embed_text(client=openai_client, text=content))
+        embed_tasks.append(embed_text(text=content))
 
     embeddings = await asyncio.gather(*embed_tasks)
 

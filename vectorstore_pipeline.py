@@ -1,6 +1,7 @@
 from qdrant_client import QdrantClient, models
 from qdrant_client.http.models import Distance, VectorParams, PointStruct
 from tqdm import tqdm
+from config import QDRANT_MOVIE_COLLECTION_NAME, QDRANT_TV_COLLECTION_NAME
 
 def connect_qdrant(api_key: str, endpoint: str) -> QdrantClient:
     try:
@@ -14,9 +15,10 @@ def connect_qdrant(api_key: str, endpoint: str) -> QdrantClient:
         print(f"❌ Error connecting to Qdrant: {e}")
         raise
 
-def create_qdrant_collection(client: QdrantClient, collection_name: str, vector_size: int):
+def create_qdrant_collection(client: QdrantClient, media_type: str, vector_size: int):
     try:
         collections = client.get_collections().collections
+        collection_name = QDRANT_MOVIE_COLLECTION_NAME if media_type == "movie" else QDRANT_TV_COLLECTION_NAME
         if collection_name in [c.name for c in collections]:
             print(f"⚠️ Collection '{collection_name}' already exists.")
             return
@@ -49,9 +51,10 @@ def safe_upload(client, collection_name, points, retries=3):
                 time.sleep(2 * attempt)
     return False
 
-def batch_insert_into_qdrant(client, collection_name, data, batch_size=100):
+def batch_insert_into_qdrant(client, media_type, data, batch_size=100):
     for i in tqdm(range(0, len(data), batch_size), desc="📤 Inserting batches"):
         batch = data[i:i + batch_size]
+        collection_name = QDRANT_MOVIE_COLLECTION_NAME if media_type == "movie" else QDRANT_TV_COLLECTION_NAME
         try:
             points = [
                 PointStruct(

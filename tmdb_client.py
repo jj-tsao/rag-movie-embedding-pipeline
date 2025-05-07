@@ -137,7 +137,7 @@ class TMDBClient:
     async def fetch_all_media_details(self, media_type: str, media_ids: List[int]) -> List[dict]:
         tasks = [self.fetch_media_details(media_type, mid) for mid in media_ids]
         media_details = []
-        for future in tqdm(asyncio.as_completed(tasks), total=len(tasks), desc=f"🎥 Fetching {media_type.upper()} details"):
+        for future in tqdm(asyncio.as_completed(tasks), total=len(tasks), desc=f"🎥 Fetching {media_type.upper()} details (might take a while...)"):
             try:
                 media = await future
                 if media:
