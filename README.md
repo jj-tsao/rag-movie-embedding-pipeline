@@ -4,7 +4,7 @@ A modular Python pipeline that fetches movie and TV show metadata from TMDB, emb
 
 ---
 
-## 🔗 Related Project
+## 🔗 Related Projects
 
 - 🎬 Frontend app: [RAG Movie Recommender](https://github.com/jj-tsao/rag-movie-recommender-app)  
 - 🚀 Live demo: [Hugging Face Spaces](https://huggingface.co/spaces/JJTsao/RAG_Movie_Recommendation_Assistant)  
