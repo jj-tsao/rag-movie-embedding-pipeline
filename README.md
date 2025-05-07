@@ -1,32 +1,34 @@
 # 🎥 RAG Movie Data Embedding Pipeline 
 
-A modular Python pipeline to fetch movie data from TMDB, format the content/metadata, embed it using OpenAI, and upload to QDrant Cloud server for use in a RAG-based recommendation system.
+A modular Python pipeline that fetches movie and TV show metadata from TMDB, embeds it using fine-tuned SentenceTransformers model, and uploads it to Qdrant Cloud for use in a semantic/hybrid RAG system.
 
 ---
 
 ## 🔗 Related Project
 
-👉 Frontend RAG app: [RAG Movie Recommender](https://github.com/jj-tsao/rag-movie-recommender-app). Check out live demo on [Hugging Face Space](https://huggingface.co/spaces/JJTsao/RAG_Movie_Recommendation_Assistant)
+👉 Frontend app: [RAG Movie Recommender](https://github.com/jj-tsao/rag-movie-recommender-app)  
+👉 Live demo: [Hugging Face Spaces](https://huggingface.co/spaces/JJTsao/RAG_Movie_Recommendation_Assistant)
 
 ---
 
-## 🧬 What It Does
+## 🧬 Pipeline Overview
 
-- 🔄 **Pulls Data** from multiple TMDB APIs (title, overview, rating, release date, credits, streaming options, etc.)
-- 🧠 **Embeds Movie Data** using OpenAI's embedding model
-- 🧹 **Cleans & Formats** data for vector DB ingestion
-- ☁️ **Uploads to QDrant Cloud vectorDB** with hybrid search metadata, ready for runtime access
-- 📤 **Asynchronous and Batch Processing** for improved efficiency and compliance with rate limiting
+- 🎬 **Fetch**: Pulls metadata from TMDB (titles, genres, cast, plot, streaming, keywords, etc.)
+- 🧠 **Embed**: Encodes media content using fine-tuned `bge-base-en-v1.5` SentenceTransformer
+- 🧹 **Format**: Structures rich metadata + natural text for hybrid search
+- ☁️ **Upload**: Inserts vectors + payloads into Qdrant with optional retries
+- ⚡ **Async & Batched**: Uses `httpx.AsyncClient` and smart batching for efficient API throughput
 
 ---
 
 ## 🔧 Tech Stack
 
-- Python
-- TMDB API
-- OpenAI Embedding Model
-- QDrant Python Client (v1.13.3)
-- HTTPX.AsyncClient
+- Python 3.10+
+- [TMDB API](https://developer.themoviedb.org/)
+- [Qdrant](https://qdrant.tech/)
+- [OpenAI](https://platform.openai.com/)
+- [SentenceTransformers](https://www.sbert.net/)
+- [HTTPX](https://www.python-httpx.org/)
 
 ---
 
@@ -53,7 +55,8 @@ TMDB_API_KEY=your_tmdb_key
 OPENAI_API_KEY=your_openai_key
 QDRANT_API_KEY=your_qdrant_key
 QDRANT_ENPOINT=https://your-qdrant-endpoint-url
-QDRANT_COLLECTION_NAME=your_qdrant_collection_name
+QDRANT_MOVIE_COLLECTION_NAME=your_qdrant_movie_collection_name
+QDRANT_TV_COLLECTION_NAME=your_qdrant_tv_collection_name
 ```
 
 ### 4. Run the pipeline
@@ -67,12 +70,11 @@ python main.py
 ## 📂 Folder Structure
 
 ```
-├── main.py                 # Entry point to run the full pipeline
-├── tmdb_client.py          # Pulls data from TMDB with async HTTP requests
-├── embedding_pipeline.py   # Formats and embeds movie data
-├── vectorstore_pipeline.py # Uploads data to QDrant Cloud vectorDB
-├── config.py               # Configures environment variables
-├── .env.example            # Environment variables template
+├── main.py                 # Main entry point
+├── tmdb_client.py          # TMDB async fetcher
+├── embedding_pipeline.py   # Embeds & formats media content
+├── vectorstore_pipeline.py # Creates Qdrant collection, uploads vectors
+├── config.py               # Env vars and constants
 └── requirements.txt        # Python dependencies
 ```
 
@@ -81,9 +83,9 @@ python main.py
 ## 🔁 Reusability
 
 The pipeline is modular and reusable for:
-- Other domains (e.g. books, podcasts)
-- Other vector stores (e.g. ChromaDB, Weaviate)
-- Other embedding models (e.g. HuggingFace, Cohere)
+- Other content domains (e.g. books, podcasts, news)
+- Other vector DBs (e.g. ChromaDB, Weaviate, Pinecone)
+- Other embedding models (e.g. HuggingFace, Cohere, etc.)
 
 ---
 
